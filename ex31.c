@@ -3,7 +3,7 @@
 #include <fcntl.h>
 #include <malloc.h>
 #include <ctype.h>
-
+#include <stdlib.h>
 
 int main(int argc, char *argv[]) {
     if (argc < 3) {
@@ -14,22 +14,25 @@ int main(int argc, char *argv[]) {
     const char *secondFilePath = argv[2];
 
     // todo: empty file
-    int firstFD= open(firstFilePath, 0);
+    // open the files and read into buffer
+    int firstFD = open(firstFilePath, 0);
     // If the file doesn't exist
     if (firstFD == -1) {
-        return 0;
+        exit(-1);
     }
+    // Find the len of the file
     long lengthFirstFile = lseek(firstFD, 0, SEEK_END);
     char* bufferFirstFile;
     bufferFirstFile = (void*) malloc(lengthFirstFile);
+    // back to the start of the file
     lseek(firstFD, 0, SEEK_SET);
     read(firstFD, bufferFirstFile, lengthFirstFile);
     close(firstFD);
 
-    int secondFD= open(secondFilePath, 0);
+    int secondFD = open(secondFilePath, 0);
     // If the file doesn't exist
     if (secondFD == -1) {
-        return 0;
+        exit(-1);
     }
     long lengthSecondFile = lseek(secondFD, 0, SEEK_END);
     char* bufferSecondFile;
@@ -71,15 +74,15 @@ int main(int argc, char *argv[]) {
         c2 = (char)tolower(c2);
         // c1 and c2 are not whitespaces
         if (c1 != c2){
-            return 2;
+            exit(2);
         }
 
         // If we arrived to the end of the file
     } while (ind1 != lengthFirstFile + 1 && ind2 != lengthSecondFile + 1);
 
     if (equal) {
-        return 1;
+        exit(1);
     }
 
-    return 3;
+    exit(3);
 }
