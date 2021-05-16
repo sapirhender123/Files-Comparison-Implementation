@@ -28,6 +28,7 @@
 #define EXCELLENT ",100,EXCELLENT\n"
 #define EXCELLENT_LEN (sizeof(EXCELLENT)-1)
 
+// Checks
 #define CHECK(cond, msg) do {                                           \
     if (!(cond)) {                                                      \
         write(STDOUT_FILENO, "Error in: "msg"\n", strlen(msg) + 11);    \
@@ -50,14 +51,13 @@
 
 /**
  * Find the C file in the directory, compile and compare result.
- *
  * @param user
- * @param path
- * @param found_c_file
- * @param input
- * @param output
- * @param comp_out_path
- * @param csv_fd
+ * @param path - path of the user directory
+ * @param found_c_file - if found c files
+ * @param input - input path
+ * @param output - output path
+ * @param comp_out_path - comp path
+ * @param csv_fd - the fd of csv
  */
 void iterate_user_files(
         const char *const user,
@@ -92,11 +92,13 @@ void iterate_user_files(
             iterate_user_files(user, next_dirname, found_c_file, input, output, comp_out_path, csv_fd);
         } else
         */
-        if (next->d_type == DT_REG) {
-            // reg file
+        if (next->d_type == DT_REG) { // if it is a folder
+            // find the length of the name
             size_t nameLen = strlen((next->d_name));
+            // if it is c file
             if (((next->d_name)[nameLen - 2] == '.') && ((next->d_name)[nameLen - 1] == 'c' )) {
                 *found_c_file = true;
+                // fork in order to compile
                 pid_t gcc_pid = fork();
                 if (0 == gcc_pid) {
                     // inside son
@@ -119,8 +121,7 @@ void iterate_user_files(
                     int wstatus;
                     CHECK_RET(-1 != waitpid(gcc_pid, &wstatus, 0), "waitpid");
 
-                    // Check if compilation failed (2)
-                    // according to wstatus
+                    // Check if compilation failed (2) - according to wstatus
                     if (WEXITSTATUS(wstatus)) {
                         CHECK(-1 != write(csv_fd, user, strlen(user)), "write");
                         CHECK(-1 != write(csv_fd, COMPILATION_ERROR, COMPILATION_ERROR_LEN), "write");
@@ -128,8 +129,8 @@ void iterate_user_files(
                     }
 
                     // Run the output files
-                    // fork -> exec "child input"
                     char child[256] = {0};
+                    // combine in order to know the full path of the child
                     strcat(child, path);
                     strcat(child, "/"CHILD_BIN_NAME);
                     pid_t user_program_pid = fork();
@@ -138,6 +139,7 @@ void iterate_user_files(
                         // run the program
                         int input_fd = open(input, O_RDONLY);
                         CHECK_RET(-1 != input_fd, "open");
+                        // route the stdin to the input file
                         CHECK_RET(-1 != dup2(input_fd, STDIN_FILENO), "dup2");
                         CHECK(-1 != close(input_fd), "close");
 
@@ -146,6 +148,7 @@ void iterate_user_files(
                                 O_WRONLY | O_TRUNC | O_CREAT,
                                 S_IRWXU | S_IRWXO | S_IRWXG);
                         CHECK_RET(-1 != output_fd, "open");
+                        // route the stdout to the results.txt - output file
                         CHECK_RET(-1 != dup2(output_fd, STDOUT_FILENO), "dup2");
                         CHECK(-1 != close(output_fd), "close");
 
@@ -154,17 +157,18 @@ void iterate_user_files(
                                 O_APPEND | O_WRONLY,
                                 S_IRWXU | S_IRWXO | S_IRWXG);
                         CHECK_RET(-1 != error_fd, "open");
+                        // route the errors to the input file
                         CHECK_RET(-1 != dup2(error_fd, STDERR_FILENO), "dup2");
                         CHECK(-1 != close(error_fd), "close");
 
                         char *const argv[2] = {child, NULL};
+                        // running the child
                         CHECK(-1 != execvp(argv[0], argv), "execvp");
                     } else {
                         CHECK_RET(-1 != user_program_pid, "fork");
-
+                        // use time in order to know if 5 seconds left
                         time_t start_time = time(NULL);
 
-                        // alarm(6);
                         CHECK_RET(-1 != waitpid(user_program_pid, &wstatus, 0), "waitpid");
                         CHECK(-1 != write(csv_fd, user, strlen(user)), "write");
                         if (time(NULL) - start_time > 5) {
@@ -174,19 +178,25 @@ void iterate_user_files(
 
                         pid_t compare_child_pid = fork();
                         if (0 == compare_child_pid) {
+                            // set the args in array
                             char *const argv[4] = {(char *)comp_out_path, TMP_RESULT_FILE, (char *)output, NULL};
+                            // check if the filels are the same
                             CHECK(-1 != execvp(comp_out_path, argv), "execvp");
                         } else {
+                            // wait for the children to finish
                             CHECK_RET(-1 != waitpid(compare_child_pid, &wstatus, 0), "waitpid");
 
                             if (WEXITSTATUS(wstatus) == 1) {
+                                // if the files are the same
                                 CHECK(-1 != write(csv_fd, EXCELLENT, EXCELLENT_LEN), "write");
                             } else if (WEXITSTATUS(wstatus) == 3) {
+                                // if the files are similar
                                 CHECK(-1 != write(csv_fd, SIMILAR, SIMILAR_LEN), "write");
                             } else {
+                                // if the files are different
                                 CHECK(-1 != write(csv_fd, WRONG, WRONG_LEN), "write");
                             }
-
+                            // remove unneeded files
                             CHECK(-1 != remove(TMP_RESULT_FILE), "remove");
                             CHECK(-1 != remove(child), "remove");
                         }
@@ -198,7 +208,12 @@ void iterate_user_files(
 
     closedir(dir);
 }
-
+/**
+ * Iterate user paths
+ * @param lines pointer to array that includs 3 line (input file)
+ * @param comp_out_path compare file path
+ * @param csv_fd the fd of csv
+ */
 void iterate_user_directories(char *lines[3], const char *const comp_out_path, int csv_fd) {
     // while there is a content in the dir
     DIR *dir = opendir(lines[0]);
@@ -215,6 +230,7 @@ void iterate_user_directories(char *lines[3], const char *const comp_out_path, i
 
             // now path is the right path - combination of the current folder and the name of the sub-folder
             char next_dirname[1024] = {0};
+            // combine in order to save the whole path
             strncat(next_dirname, lines[0], strlen(lines[0]));
             strcat(next_dirname, "/");
             strncat(next_dirname, next->d_name, strlen(next->d_name));
@@ -241,6 +257,15 @@ void do_nothing(int signum)
 }
 */
 
+/**
+ *
+ * @param argc
+ * @param argv file that inside:
+ * line 1 - path to a folder that include sub-folders,
+ * line 2- path to file that include input
+ * line 3 - path to a file that include the correct output for the input file from line 2
+ * @return
+ */
 int main(int argc, char *argv[]) {
     const char *FilePath = argv[1];
 
@@ -253,7 +278,7 @@ int main(int argc, char *argv[]) {
     char *buffer;
     buffer = (void *)malloc(length);
     CHECK_RET_VAL(NULL != buffer, "Error in: malloc", -1);
-
+    // set to start
     lseek(fd, 0, SEEK_SET);
     CHECK_RET_VAL(-1 != read(fd, buffer, length), "Error in: read", -1);
 
@@ -309,6 +334,7 @@ int main(int argc, char *argv[]) {
     // lines [2] - third arg -> the right output for the src file from line 2
     char comp_out_path[256] = {0};
     CHECK(NULL != getcwd(comp_out_path, sizeof(comp_out_path)), "getcwd");
+    // combine the whole path
     strcat(comp_out_path, "/comp.out");
 
     int csv_fd = open("results.csv", O_CREAT | O_TRUNC | O_WRONLY, S_IRWXU | S_IRWXO | S_IRWXG);
