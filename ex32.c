@@ -42,6 +42,13 @@
     }                                                                   \
 } while (0);
 
+#define CHECK_RET_GOTO(cond, msg, label) do {                           \
+    if (!(cond)) {                                                      \
+        write(STDOUT_FILENO, "Error in: "msg"\n", strlen(msg) + 11);    \
+        goto label;                                                     \
+    }                                                                   \
+} while (0);
+
 #define CHECK_RET_VAL(cond, msg, val) do {              \
     if (!(cond)) {                                      \
         write(STDOUT_FILENO, msg"\n", strlen(msg) + 1); \
@@ -107,13 +114,19 @@ void iterate_user_files(
                             O_APPEND | O_WRONLY,
                             S_IRWXU | S_IRWXO | S_IRWXG);
                     CHECK_RET(-1 != error_fd, "open");
-                    CHECK_RET(-1 != dup2(error_fd, STDERR_FILENO), "dup2");
+                    // route the error into errors.txt
+                    CHECK_RET_GOTO(-1 != dup2(error_fd, STDERR_FILENO), "dup2", out_child);
                     CHECK(-1 != close(error_fd), "close");
+                    // change the path
                     CHECK_RET(-1 != chdir(path), "chdir");
 
                     // compile each c file
                     char *const argv[5] = {"gcc", next->d_name, "-o", CHILD_BIN_NAME, NULL};
-                    CHECK(-1 != execvp("gcc", argv), "execvp");
+                    CHECK_RET(-1 != execvp("gcc", argv), "execvp");
+
+                    out_child:
+                    close(error_fd);
+                    return;
                 } else {
                     CHECK_RET(-1 != gcc_pid, "fork");
 
@@ -137,33 +150,48 @@ void iterate_user_files(
                     if (0 == user_program_pid) {
                         // in son
                         // run the program
+                        int error_fd = -1;
+                        int output_fd = -1;
                         int input_fd = open(input, O_RDONLY);
                         CHECK_RET(-1 != input_fd, "open");
                         // route the stdin to the input file
-                        CHECK_RET(-1 != dup2(input_fd, STDIN_FILENO), "dup2");
+                        CHECK_RET_GOTO(-1 != dup2(input_fd, STDIN_FILENO), "dup2", out_user_program1);
                         CHECK(-1 != close(input_fd), "close");
 
-                        int output_fd = open(
+                        output_fd = open(
                                 TMP_RESULT_FILE,
                                 O_WRONLY | O_TRUNC | O_CREAT,
                                 S_IRWXU | S_IRWXO | S_IRWXG);
                         CHECK_RET(-1 != output_fd, "open");
                         // route the stdout to the results.txt - output file
-                        CHECK_RET(-1 != dup2(output_fd, STDOUT_FILENO), "dup2");
+                        CHECK_RET_GOTO(-1 != dup2(output_fd, STDOUT_FILENO), "dup2", out_user_program2);
                         CHECK(-1 != close(output_fd), "close");
 
-                        int error_fd = open(
+                        error_fd = open(
                                 ERR_FILE,
                                 O_APPEND | O_WRONLY,
                                 S_IRWXU | S_IRWXO | S_IRWXG);
                         CHECK_RET(-1 != error_fd, "open");
                         // route the errors to the input file
-                        CHECK_RET(-1 != dup2(error_fd, STDERR_FILENO), "dup2");
+                        CHECK_RET_GOTO(-1 != dup2(error_fd, STDERR_FILENO), "dup2", out_user_program3);
                         CHECK(-1 != close(error_fd), "close");
 
                         char *const argv[2] = {child, NULL};
                         // running the child
-                        CHECK(-1 != execvp(argv[0], argv), "execvp");
+                        CHECK_RET(-1 != execvp(argv[0], argv), "execvp");
+
+                        out_user_program1:
+                        close(input_fd);
+
+                        out_user_program2:
+                        if (-1 != output_fd) {
+                            close(output_fd);
+                        }
+
+                        out_user_program3:
+                        if (-1 != error_fd) {
+                            close(error_fd);
+                        }
                     } else {
                         CHECK_RET(-1 != user_program_pid, "fork");
                         // use time in order to know if 5 seconds left
@@ -269,18 +297,20 @@ void do_nothing(int signum)
 int main(int argc, char *argv[]) {
     const char *FilePath = argv[1];
 
+    int res = -1;
+    char *buffer = NULL;
+
     // open the input file
     int fd = open(FilePath, 0);
     CHECK_RET_VAL(-1 != fd, "Error in: open", -1);
 
     // find the len of the file
     long length = lseek(fd, 0, SEEK_END);
-    char *buffer;
     buffer = (void *)malloc(length);
-    CHECK_RET_VAL(NULL != buffer, "Error in: malloc", -1);
+    CHECK_RET_GOTO(NULL != buffer, "Error in: malloc", out);
     // set to start
     lseek(fd, 0, SEEK_SET);
-    CHECK_RET_VAL(-1 != read(fd, buffer, length), "Error in: read", -1);
+    CHECK_RET_GOTO(-1 != read(fd, buffer, length), "Error in: read", out);
 
     // define array for the 3 sentences in the input file
     char *lines[3];
@@ -294,8 +324,8 @@ int main(int argc, char *argv[]) {
     // the second line
     buffer[idx++]='\0';
     DIR *p = opendir(lines[0]);
-    CHECK_RET_VAL(NULL != p, "Not a valid directory", -1);
-    CHECK(-1 != closedir(p), "closedir");
+    CHECK_RET_GOTO(NULL != p, "Not a valid directory", out);
+    CHECK_RET_GOTO(-1 != closedir(p), "closedir", out);
 
     lines[lineIndex++] = buffer + idx;
 
@@ -303,8 +333,8 @@ int main(int argc, char *argv[]) {
     while (buffer[idx] != '\n' && idx < length) {idx++;}
     buffer[idx++]='\0';
     int tmpfd = open(lines[1], 0);
-    CHECK_RET_VAL(-1 != tmpfd, "Input file not exist", -1);
-    CHECK(-1 != close(tmpfd), "close");
+    CHECK_RET_GOTO(-1 != tmpfd, "Input file not exist", out);
+    CHECK_RET_GOTO(-1 != close(tmpfd), "close", out);
 
     lines[lineIndex] = buffer + idx;
 
@@ -312,8 +342,8 @@ int main(int argc, char *argv[]) {
     while (buffer[idx] != '\n' && idx < length) {idx++;}
     buffer[idx] = '\0';
     tmpfd = open(lines[1], 0);
-    CHECK_RET_VAL(-1 != tmpfd, "Output file not exist", -1);
-    CHECK(-1 != close(tmpfd), "close");
+    CHECK_RET_GOTO(-1 != tmpfd, "Output file not exist", out);
+    CHECK_RET_GOTO(-1 != close(tmpfd), "close", out);
 
     // Handle SIGINT if we want to terminate the timed out process earlier - Not required
     // Set up the structure to specify the new action.
@@ -327,19 +357,27 @@ int main(int argc, char *argv[]) {
 
     // Create error file
     int err_fd = open(ERR_FILE, O_CREAT | O_TRUNC, S_IRWXU | S_IRWXO | S_IRWXG);
-    CHECK(-1 != close(err_fd), "close"); // Will be opened when needed
+    CHECK_RET_GOTO(-1 != close(err_fd), "close", out); // Will be opened when needed
 
     // lines [0] - first arg -> path to folder that includes sub-folders
     // lines [1] - second arg -> path to file that inside him there is input
     // lines [2] - third arg -> the right output for the src file from line 2
     char comp_out_path[256] = {0};
-    CHECK(NULL != getcwd(comp_out_path, sizeof(comp_out_path)), "getcwd");
+    CHECK_RET_GOTO(NULL != getcwd(comp_out_path, sizeof(comp_out_path)), "getcwd", out);
     // combine the whole path
     strcat(comp_out_path, "/comp.out");
 
     int csv_fd = open("results.csv", O_CREAT | O_TRUNC | O_WRONLY, S_IRWXU | S_IRWXO | S_IRWXG);
     iterate_user_directories(lines, comp_out_path, csv_fd);
-    CHECK(-1 != close(csv_fd), "close");
+    CHECK_RET_GOTO(-1 != close(csv_fd), "close", out);
 
-    return 0;
+    res = 0;
+
+    out:
+    close(fd);
+
+    if (buffer != NULL) {
+        free(buffer);
+    }
+    return res;
 }
