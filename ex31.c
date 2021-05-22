@@ -15,7 +15,6 @@ int main(int argc, char *argv[]) {
     const char *firstFilePath = argv[1];
     const char *secondFilePath = argv[2];
 
-    // todo: empty file
     // open the files and read into buffer
     int firstFD = open(firstFilePath, 0);
     // If the file doesn't exist

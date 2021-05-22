@@ -83,22 +83,6 @@ void iterate_user_files(
     // while there is a content in the dir
     while (NULL != (next = readdir(dir))) {
         // Handle recursive C files - Not required
-        /*
-        if (next->d_type == DT_DIR) { // if it is a folder
-            if (strcmp(next->d_name, ".") == 0 || strcmp(next->d_name, "..") == 0) {
-                // not relevant-continue
-                continue;
-            }
-
-            char next_dirname[1024] = {0};
-            strncat(next_dirname, path, strlen(path));
-            strcat(next_dirname, "/");
-            strncat(next_dirname, next->d_name, strlen(next->d_name));
-
-            // now path is the right path - combination of the current folder and the name of the sub-folder
-            iterate_user_files(user, next_dirname, found_c_file, input, output, comp_out_path, csv_fd);
-        } else
-        */
         if (next->d_type == DT_REG) { // if it is a folder
             // find the length of the name
             size_t nameLen = strlen((next->d_name));
@@ -278,12 +262,6 @@ void iterate_user_directories(char *lines[3], const char *const comp_out_path, i
     CHECK(-1 != closedir(dir), "closedir");
 }
 
-// Handle SIGINT if we want to terminate the timed out process earlier - Not required
-/*
-void do_nothing(int signum)
-{
-}
-*/
 
 /**
  *
@@ -344,16 +322,6 @@ int main(int argc, char *argv[]) {
     tmpfd = open(lines[1], 0);
     CHECK_RET_GOTO(-1 != tmpfd, "Output file not exist", out);
     CHECK_RET_GOTO(-1 != close(tmpfd), "close", out);
-
-    // Handle SIGINT if we want to terminate the timed out process earlier - Not required
-    // Set up the structure to specify the new action.
-    /*
-    struct sigaction new_action, old_action;
-    new_action.sa_handler = do_nothing;
-    sigemptyset(&new_action.sa_mask);
-    new_action.sa_flags = 0;
-    sigaction(SIGINT, &new_action, NULL);
-    */
 
     // Create error file
     int err_fd = open(ERR_FILE, O_CREAT | O_TRUNC, S_IRWXU | S_IRWXO | S_IRWXG);
