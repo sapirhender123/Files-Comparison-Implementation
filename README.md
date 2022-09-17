@@ -1,4 +1,4 @@
-# operating_stystem_ex3
+# Files-Comparison-Implementation
 
 ## ex31 
 A program that accepts paths to two files as arguments to main, and checks whether the two files Identical/similar/different. The paths include the filenames.
